@@ -1,0 +1,146 @@
+## 11. Automação de certificados TLS (Win-ACME + PowerShell + Agendador)
+
+Além da automação de segurança (EventHandlers + AUTO-BLOQUEIO-Fail2Ban.ps1),
+existe uma segunda automação em “piloto automático” para manter os
+**certificados TLS sempre atualizados** tanto no IIS quanto no hMailServer.
+
+Tudo é orquestrado via:
+
+- **Win-ACME** (`wacs.exe`, ex.: `win-acme.v2.2.9.1701.x64.trimmed`)
+- **Scripts PowerShell** (exemplos):
+  - `automacao-de-ce.ps1` / `post-renew.ps1`
+  - `01-extract-keys.ps1`
+  - `02-update-hmail.ps1`
+  - `Comparar-Certificados-HMail-IIS.ps1`
+- **Agendador de Tarefas do Windows**
+
+> Importante: nenhum segredo (PFX real, senhas, chaves privadas) deve ser versionado
+> no repositório. Apenas os scripts genéricos e caminhos “modelo”.
+
+---
+
+### 11.1 Objetivo da automação
+
+Garantir que, sempre que o certificado Let’s Encrypt for renovado:
+
+1. O IIS passe a usar o **novo certificado** para HTTPS.
+2. O hMailServer passe a usar o **mesmo certificado** para:
+   - IMAPS (993)
+   - SMTP/STARTTLS (587, opcionalmente 25)
+3. Sem intervenção manual, de forma repetível e auditável.
+
+Assim, tanto web (IIS) quanto e-mail (hMailServer) ficam:
+
+- com o certificado em dia;
+- com o mesmo **thumbprint**, reduzindo problemas de confiança em clientes.
+
+---
+
+### 11.2 Fluxo lógico (alto nível)
+
+1. **Win-ACME renova o certificado**
+   - O `wacs.exe` é executado (via tarefa agendada do Windows).
+   - Ao renovar com sucesso, ele dispara um “script pós-renovação”, por exemplo:
+     - `post-renew.ps1` ou `automacao-de-ce.ps1`.
+
+2. **Script orquestrador (automacao-de-ce.ps1 / post-renew.ps1)**
+   - É o “piloto automático” que chama os outros scripts em sequência:
+     1. `01-extract-keys.ps1`
+     2. `02-update-hmail.ps1`
+     3. `Comparar-Certificados-HMail-IIS.ps1` (verificação)
+
+3. **Atualização concluída**
+   - IIS já está usando o novo certificado (via próprio Win-ACME).
+   - hMailServer é atualizado para usar o mesmo certificado.
+   - Um relatório/log é gerado para auditoria.
+
+Tudo isso roda **no servidor**, sem expor nada pelo hMailServer nem
+criar novas superfícies de ataque.
+
+---
+
+### 11.3 Papéis dos scripts (conceito, sem detalhes sensíveis)
+
+> Os nomes abaixo são exemplos reais de como o fluxo foi dividido,
+> mas o repositório deve conter apenas a lógica genérica, sem paths secretos.
+
+#### 11.3.1 `01-extract-keys.ps1`
+
+Responsável por:
+
+- Localizar o certificado recém-renovado no **repositório de certificados do Windows**
+  (por thumbprint, subject, etc.).
+- Exportar para formatos de trabalho, por exemplo:
+  - `.pfx` (com senha definida no script/variável protegida)
+  - `.cer` / `.pem` para outras ferramentas se necessário.
+- Organizar a saída em pastas previsíveis, algo como:
+
+```text
+C:\Certificados\mail.seudominio.com.br\
+  ├─ atual\
+  │   ├─ cert.pfx
+  │   └─ cert.cer
+  └─ historico\
+      └─ ... (opcional)
+### 11.3.2 02-update-hmail.ps1
+**Responsável por:**
+
+* Atualizar a configuração do hMailServer para usar o novo certificado.
+* Pode fazer isso via:
+    * API/COM do hMailServer;
+    * ou atualização de path/arquivo onde o hMail busca o PFX.
+* **Passos típicos:**
+    1.  Parar o serviço do hMailServer (se necessário).
+    2.  Apontar a configuração para o novo PFX ou thumbprint.
+    3.  Iniciar o serviço novamente.
+    4.  Registrar no log o novo thumbprint/caminho em uso.
+
+### 11.3.3 Comparar-Certificados-HMail-IIS.ps1
+**Responsável por:**
+
+* Ler o certificado em uso no IIS (binding HTTPS).
+* Ler o certificado em uso no hMailServer (IMAPS/SMTP).
+* Comparar thumbprints.
+* **Se baterem:**
+    * Registrar algo como `OK: IIS e hMailServer usam o mesmo certificado`.
+* **Se não baterem:**
+    * Registrar alerta no log (e, opcionalmente, disparar e-mail interno ou evento).
+
+---
+
+## 11.4 Agendador de Tarefas (Windows Task Scheduler)
+Existem, tipicamente, duas tarefas relacionadas:
+
+**1. Tarefa Win-ACME (renovação)**
+* Responsável por executar o `wacs.exe` periodicamente (ex.: 1x por dia ou algumas vezes por semana).
+* Configurada para:
+    * Renovar certificados próximos do vencimento.
+    * Chamar o script pós-renovação (ex.: `post-renew.ps1` / `automacao-de-ce.ps1`).
+
+**2. Tarefa auxiliar (opcional)**
+* Se necessário, pode haver uma tarefa separada apenas para rodar scripts de comparação/validação (como `Comparar-Certificados-HMail-IIS.ps1`) em determinado horário (ex.: de madrugada) para auditoria.
+
+Em todos os casos, os scripts rodam fora do hMailServer, sob um usuário do Windows com as permissões necessárias, e não há execução de comandos externos a partir do `EventHandlers`.
+
+---
+
+## 11.5 Segurança e boas práticas dessa automação
+✅ **Nenhuma chave privada ou senha deve ser commitada no Git:**
+* usar placeholders (`***SENHA***`), variáveis de ambiente ou algum mecanismo externo (ex.: Credential Manager) no servidor real.
+
+✅ **Scripts focam em:**
+* consultar o repositório de certificados;
+* exportar arquivos;
+* atualizar configurações do hMailServer/IIS;
+* gerar logs.
+
+✅ **Não há:**
+* exposição de portas adicionais;
+* chamadas remotas pelo hMailServer;
+* manipulação de rede além do que já existe no servidor.
+
+🔎 **Em caso de problema:**
+* o máximo que acontece é o hMailServer continuar usando o certificado antigo por algum tempo;
+* a automação pode ser desativada simplesmente desabilitando a tarefa ou renomeando o script, sem impacto no fluxo normal de e-mail.
+
+Com isso, a parte de certificados também entra no “piloto automático”: Win-ACME renova, os scripts sincronizam, IIS e hMailServer seguem sempre com TLS atualizado — sem precisar de ação manual e sem expor segredos no repositório público.
