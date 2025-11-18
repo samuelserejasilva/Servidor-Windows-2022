@@ -72,3 +72,17 @@
   | Tomcat 11 (Java/Spring)   |
   | hMailServer (SMTP/IMAP)   |
   +---------------------------+
+
+| Camada   | Serviço                   | Porta | Protocolo | Observações                        |
+| -------- | ------------------------- | ----- | --------- | ---------------------------------- |
+| Internet | HTTP                      | 80    | TCP       | Redirecionado para HTTPS pela IIS  |
+| Internet | HTTPS                     | 443   | TCP       | IIS + ARR + certificado TLS        |
+| Internet | SMTP (entrada)            | 25    | TCP       | NAT → hMailServer                  |
+| Internet | SMTP submissão (clientes) | 587   | TCP       | STARTTLS + autenticação            |
+| Internet | IMAPS (clientes)          | 993   | TCP       | IMAP com SSL/TLS                   |
+| LAN      | HTTP backend (Tomcat)     | 8080  | TCP       | IIS → Tomcat (reverse proxy local) |
+
+
+(Outras portas internas podem existir para DB, RDP etc., mas não são expostas diretamente à Internet).
+
+
