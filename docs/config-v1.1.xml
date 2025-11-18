@@ -28,3 +28,6 @@
 
   </emailProvider>
 </clientConfig>
+
+# Este documento consolida a parte de autoconfiguração de clientes de e-mail do ambiente,
+# servindo como referência rápida tanto para futuras migrações quanto para troubleshooting.
