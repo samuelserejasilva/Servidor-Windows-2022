@@ -1,0 +1,74 @@
+# Visão Geral de Arquitetura — Servidor Windows Server 2022
+
+> Este documento descreve a arquitetura lógica do ambiente de produção
+> baseado em **Windows Server 2022 + IIS/ARR + Tomcat + PHP + hMailServer**,
+> protegido por **Mikrotik** na borda e integrado ao DNS público (Registro.br)
+> para o domínio **portalauditoria.com.br**.
+
+---
+
+## 1. Componentes principais
+
+### 1.1 Borda / Internet
+
+- **Provedor de Internet:** link dedicado com IP público fixo.
+- **Roteador de borda:** Mikrotik
+  - NAT (masquerade) e port forwarding.
+  - Firewall (cadeias `input`, `forward`, `output`).
+  - Marcação de conexões para serviços específicos (HTTP/HTTPS, SMTP, IMAP, etc.).
+  - Log de tentativas de acesso e regras críticas (ex.: porta 25).
+
+### 1.2 Camada de Aplicação / Serviços
+
+- **Sistema operacional:** Windows Server 2022 Datacenter  
+- **Funções principais:**
+  - IIS (Internet Information Services)
+  - ARR (Application Request Routing) + URL Rewrite
+  - Suporte a **CGI/FastCGI** (PHP)
+  - Servidor de aplicação Java (Tomcat 11 / Spring Boot)
+  - Servidor de e-mail (hMailServer)
+  - Webmail (Roundcube em PHP)
+- **Bancos de dados:**
+  - Banco do hMailServer (mensagens, contas, domínios).
+  - Banco do Roundcube (preferências, contatos, cache).
+  - Outros bancos para aplicações Java (quando aplicável).
+
+### 1.3 DNS e Certificados
+
+- **DNS público (Registro.br):**
+  - Registros **A** (raiz, `www`, `mail`, etc.) apontando para o IP público.
+  - Registros **MX** apontando para `mail.portalauditoria.com.br`.
+  - Registros TXT para **SPF**, **DKIM** e **DMARC**.
+- **Certificados TLS:**
+  - Emitidos via **Let’s Encrypt** (Win-ACME).
+  - Bindings no IIS para:
+    - `https://www.portalauditoria.com.br`
+    - `https://mail.portalauditoria.com.br`
+    - Outros subdomínios conforme necessidade (ex.: `autodiscover.`).
+
+---
+
+## 2. Topologia lógica (alto nível)
+
+```text
+[ Internet ]
+     |
+     v
+[ Mikrotik ]
+  - NAT
+  - Firewall
+  - Port Forwarding
+     |
+     v
+[ Windows Server 2022 ]
+  +---------------------------+
+  | IIS + ARR + URL Rewrite   |
+  |   - Site raiz (80/443)    |
+  |   - /webmail (Roundcube)  |
+  |   - /php (scripts)        |
+  |   - /autodiscover         |
+  |   - /mail                 |
+  +---------------------------+
+  | Tomcat 11 (Java/Spring)   |
+  | hMailServer (SMTP/IMAP)   |
+  +---------------------------+
