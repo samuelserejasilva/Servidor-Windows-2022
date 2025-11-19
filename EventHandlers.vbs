@@ -1,14 +1,14 @@
 ' ======================================================================
 
-' Script Aurea/Black List para hMailServer (v3.5)
+' Script Aurea/Black List para hMailServer (v3.7 )
 
-' CORREÇÕES:
+' CORRECOES v3.7:
 
-' - Mudado ByRef para ByVal na função IsInList (bug crítico)
+' - BLACKLIST agora tem prioridade sobre WHITELIST (seguranca maxima)
 
-' - Corrigida lógica de escape de regex para wildcards
+' - Adicionado DEBUG_MATCH para identificar exatamente qual entrada deu match
 
-' - Adicionadas validações extras para evitar matches incorretos
+' - Politica: AUTH > BLACKLIST > WHITELIST > DEFAULT
 
 ' ======================================================================
 
@@ -114,7 +114,7 @@ Sub OnSMTPData(oClient, oMessage)
     
 
     
-    ' 1) AUTENTICACAO TEM PRIORIDADE MAXIMA
+    ' 1) AUTENTICACAO / MENSAGENS INTERNAS TEM PRIORIDADE MAXIMA
     
     If oClient.Username <> "" Then
         
@@ -130,51 +130,51 @@ Sub OnSMTPData(oClient, oMessage)
         
     Else
         
-        ' 2) WHITELIST (Lendo Do cache Global)
+        ' 2) BLACKLIST TEM PRIORIDADE (v3.7 - CORRECAO CRITICA)
         
-        If IsInList("g_WLEmails", fromAddr) Then
+        If IsInList("g_BLEmails", fromAddr) Then
             
-            decision = DECISION_ALLOW_AUREA
+            decision = DECISION_BLOCK_BLACK
             
-            reason = "ALLOW_AUREA: FROM_EMAIL in whitelist"
+            reason = "BLOCK_BLACK: FROM_EMAIL in blacklist"
             
-        ElseIf IsInList("g_WLDomains", fromDomain) Then
+        ElseIf IsInList("g_BLDomains", fromDomain) Then
             
-            decision = DECISION_ALLOW_AUREA
+            decision = DECISION_BLOCK_BLACK
             
-            reason = "ALLOW_AUREA: FROM_DOMAIN in whitelist"
+            reason = "BLOCK_BLACK: FROM_DOMAIN in blacklist"
             
-        ElseIf IsInList("g_WLIPs", remoteIP) Then
+        ElseIf IsInList("g_BLIPs", remoteIP) Then
             
-            decision = DECISION_ALLOW_AUREA
+            decision = DECISION_BLOCK_BLACK
             
-            reason = "ALLOW_AUREA: REMOTE_IP in whitelist"
+            reason = "BLOCK_BLACK: REMOTE_IP in blacklist"
             
         End If
         
 
         
-        ' 3) BLACKLIST (Lendo Do cache Global)
+        ' 3) WHITELIST SO SE NAO ESTIVER EM BLACKLIST
         
         If decision = DECISION_NONE Then
             
-            If IsInList("g_BLEmails", fromAddr) Then
+            If IsInList("g_WLEmails", fromAddr) Then
                 
-                decision = DECISION_BLOCK_BLACK
+                decision = DECISION_ALLOW_AUREA
                 
-                reason = "BLOCK_BLACK: FROM_EMAIL in blacklist"
+                reason = "ALLOW_AUREA: FROM_EMAIL in whitelist"
                 
-            ElseIf IsInList("g_BLDomains", fromDomain) Then
+            ElseIf IsInList("g_WLDomains", fromDomain) Then
                 
-                decision = DECISION_BLOCK_BLACK
+                decision = DECISION_ALLOW_AUREA
                 
-                reason = "BLOCK_BLACK: FROM_DOMAIN in blacklist"
+                reason = "ALLOW_AUREA: FROM_DOMAIN in whitelist"
                 
-            ElseIf IsInList("g_BLIPs", remoteIP) Then
+            ElseIf IsInList("g_WLIPs", remoteIP) Then
                 
-                decision = DECISION_BLOCK_BLACK
+                decision = DECISION_ALLOW_AUREA
                 
-                reason = "BLOCK_BLACK: REMOTE_IP in blacklist"
+                reason = "ALLOW_AUREA: REMOTE_IP in whitelist"
                 
             End If
             
@@ -412,13 +412,11 @@ End Function
 
 ' ========================================================
 
-' VERIFICACAO SEGURA (LENDO Do CACHE GLOBAL) - CORRIGIDA v3.5
+' VERIFICACAO SEGURA COM DEBUG (v3.7 - TRACEABLE MATCHES)
 
 ' ========================================================
 
 Function IsInList(ByVal listCacheName, ByVal key)
-    
-    ' *** CORRIGIDO: Mudado de ByRef para ByVal ***
     
     Dim i, ub, regex, item, pattern, listArray
     
@@ -428,7 +426,7 @@ Function IsInList(ByVal listCacheName, ByVal key)
     
 
     
-    ' *** NOVA VALIDAÇÃO: Rejeita chave vazia ***
+    ' Rejeita chave vazia
     
     If key = "" Then Exit Function
     
@@ -464,17 +462,15 @@ Function IsInList(ByVal listCacheName, ByVal key)
         
 
         
-        ' *** NOVA VALIDAÇÃO: Ignora entradas vazias ***
+        ' Ignora entradas vazias
         
         If item = "" Then
             
-            ' Pula para próxima iteração
-            
-            ' *** CORRIGIDO: Lógica de wildcard ***
+            ' Continua para proxima iteracao
             
         ElseIf InStr(item, "*") > 0 Or InStr(item, "?") > 0 Then
             
-            ' Escapa caracteres especiais de regex ANTES de converter wildcards
+            ' Wildcard match
             
             pattern = item
             
@@ -520,6 +516,8 @@ Function IsInList(ByVal listCacheName, ByVal key)
                 
                 IsInList = True
                 
+                WriteAuditLog "DEBUG_MATCH: " & listCacheName & " item=[" & item & "] key=[" & key & "] (regex)"
+                
                 Exit Function
                 
             End If
@@ -531,6 +529,8 @@ Function IsInList(ByVal listCacheName, ByVal key)
             If key = item Then
                 
                 IsInList = True
+                
+                WriteAuditLog "DEBUG_MATCH: " & listCacheName & " item=[" & item & "] key=[" & key & "] (exact)"
                 
                 Exit Function
                 
@@ -595,4 +595,3 @@ Sub WriteAuditLog(ByVal text)
     End If
     
 End Sub
-
