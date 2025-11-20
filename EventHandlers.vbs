@@ -1,597 +1,308 @@
 ' ======================================================================
-
-' Script Aurea/Black List para hMailServer (v3.7 )
-
-' CORRECOES v3.7:
-
-' - BLACKLIST agora tem prioridade sobre WHITELIST (seguranca maxima)
-
-' - Adicionado DEBUG_MATCH para identificar exatamente qual entrada deu match
-
+' Script Aurea/Black List para hMailServer (v3.8 - PRODUCAO, FIX Result)
+'
+' - Removidos logs DEBUG excessivos
+' - Otimizado para performance
 ' - Politica: AUTH > BLACKLIST > WHITELIST > DEFAULT
-
+' - Suporte a wildcards (* e ?) em todas as listas
+' - Integracao correta com hMailServer via Result.Value / Result.Message
 ' ======================================================================
 
 Option Explicit
 
-
-
 ' ================== CONFIGURACAO BASICA ==================
-
-Const LOCAL_DOMAIN = "portalauditoria.com.br"
-
-Const LIST_BASE_PATH = "C:\hmail-lists\lists"
-
-Const LOG_FILE = "C:\hmail-lists\logs\AureaBlack_Lists.log"
-
-Const CACHE_RELOAD_MINUTES = 5
-
-
-
-' === VARIAVEIS GLOBAIS (Dim) REMOVIDAS ===
-
-' O cache agora é tratado 100% pelo objeto Global
-
-
+Const LOCAL_DOMAIN          = "portalauditoria.com.br"
+Const LIST_BASE_PATH        = "C:\hmail-lists\lists"
+Const LOG_FILE              = "C:\hmail-lists\logs\AureaBlack_Lists.log"
+Const CACHE_RELOAD_MINUTES  = 5
 
 ' ================== CODIGOS DE DECISAO ==================
+Const DECISION_NONE         = 0
+Const DECISION_ALLOW_AUREA  = 10
+Const DECISION_ALLOW_AUTO   = 20
+Const DECISION_BLOCK_BLACK  = 30
 
-Const DECISION_NONE = 0
-
-Const DECISION_ALLOW_AUREA = 10
-
-Const DECISION_ALLOW_AUTO = 20
-
-Const DECISION_BLOCK_BLACK = 30
-
-
+' ================== CACHE GLOBAL ==================
+Dim g_WLEmails, g_WLDomains, g_WLIPs
+Dim g_BLEmails, g_BLDomains, g_BLIPs
+Dim g_LastCacheLoad
 
 ' ========================================================
-
 ' EVENTO PRINCIPAL: OnSMTPData
-
 ' ========================================================
-
 Sub OnSMTPData(oClient, oMessage)
-    
     On Error Resume Next
-    
 
-    
     Dim decision, reason
-    
     decision = DECISION_NONE
-    
-    reason = "NO_DECISION"
-    
+    reason   = "NO_DECISION"
 
-    
     ' Carrega cache se necessario
-    
     Call CheckAndLoadCache
-    
 
-    
     Dim remoteIP, fromAddr, fromDomain
-    
-    remoteIP = LCase(Trim(oClient.IPAddress))
-    
-    fromAddr = LCase(Trim(oMessage.FromAddress))
-    
+    remoteIP   = LCase(Trim(oClient.IPAddress))
+    fromAddr   = LCase(Trim(oMessage.FromAddress))
     fromDomain = GetDomain(fromAddr)
-    
 
-    
     Dim rcpts, i, allRecipientsInternal, firstRecipientAddr
-    
     Set rcpts = oMessage.Recipients
-    
     allRecipientsInternal = True
-    
-    firstRecipientAddr = ""
-    
 
-    
     If rcpts.Count > 0 Then
-        
         firstRecipientAddr = LCase(Trim(rcpts(0).Address))
-        
-    End If
-    
-
-    
-    For i = 0 To rcpts.Count - 1
-        
-        If Not IsLocalAddress(rcpts(i).Address) Then
-            
-            allRecipientsInternal = False
-            
-            Exit For
-            
-        End If
-        
-    Next
-    
-
-    
-    ' 1) AUTENTICACAO / MENSAGENS INTERNAS TEM PRIORIDADE MAXIMA
-    
-    If oClient.Username <> "" Then
-        
-        decision = DECISION_ALLOW_AUREA
-        
-        reason = "ALLOW_AUREA: AUTHENTICATED_SENDER (" & oClient.Username & ")"
-        
-    ElseIf IsLocalAddress(fromAddr) And allRecipientsInternal Then
-        
-        decision = DECISION_ALLOW_AUREA
-        
-        reason = "ALLOW_AUREA: INTERNAL_LOCAL_MESSAGE"
-        
     Else
-        
-        ' 2) BLACKLIST TEM PRIORIDADE (v3.7 - CORRECAO CRITICA)
-        
+        firstRecipientAddr = ""
+    End If
+
+    For i = 0 To rcpts.Count - 1
+        If Not IsLocalAddress(rcpts(i).Address) Then
+            allRecipientsInternal = False
+            Exit For
+        End If
+    Next
+
+    ' 1) AUTENTICACAO / MENSAGENS INTERNAS TEM PRIORIDADE
+    If oClient.Username <> "" Then
+
+        decision = DECISION_ALLOW_AUREA
+        reason   = "ALLOW_AUREA: AUTHENTICATED_SENDER (" & oClient.Username & ")"
+
+    ElseIf IsLocalAddress(fromAddr) And allRecipientsInternal Then
+
+        decision = DECISION_ALLOW_AUREA
+        reason   = "ALLOW_AUREA: INTERNAL_LOCAL_MESSAGE"
+
+    Else
+        ' 2) BLACKLIST TEM PRIORIDADE
         If IsInList("g_BLEmails", fromAddr) Then
-            
+
             decision = DECISION_BLOCK_BLACK
-            
-            reason = "BLOCK_BLACK: FROM_EMAIL in blacklist"
-            
+            reason   = "BLOCK_BLACK: FROM_EMAIL in blacklist"
+
         ElseIf IsInList("g_BLDomains", fromDomain) Then
-            
+
             decision = DECISION_BLOCK_BLACK
-            
-            reason = "BLOCK_BLACK: FROM_DOMAIN in blacklist"
-            
+            reason   = "BLOCK_BLACK: FROM_DOMAIN in blacklist"
+
         ElseIf IsInList("g_BLIPs", remoteIP) Then
-            
+
             decision = DECISION_BLOCK_BLACK
-            
-            reason = "BLOCK_BLACK: REMOTE_IP in blacklist"
-            
-        End If
-        
+            reason   = "BLOCK_BLACK: REMOTE_IP in blacklist"
 
-        
+        End If
+
         ' 3) WHITELIST SO SE NAO ESTIVER EM BLACKLIST
-        
         If decision = DECISION_NONE Then
-            
+
             If IsInList("g_WLEmails", fromAddr) Then
-                
+
                 decision = DECISION_ALLOW_AUREA
-                
-                reason = "ALLOW_AUREA: FROM_EMAIL in whitelist"
-                
+                reason   = "ALLOW_AUREA: FROM_EMAIL in whitelist"
+
             ElseIf IsInList("g_WLDomains", fromDomain) Then
-                
+
                 decision = DECISION_ALLOW_AUREA
-                
-                reason = "ALLOW_AUREA: FROM_DOMAIN in whitelist"
-                
+                reason   = "ALLOW_AUREA: FROM_DOMAIN in whitelist"
+
             ElseIf IsInList("g_WLIPs", remoteIP) Then
-                
+
                 decision = DECISION_ALLOW_AUREA
-                
-                reason = "ALLOW_AUREA: REMOTE_IP in whitelist"
-                
+                reason   = "ALLOW_AUREA: FROM_IP in whitelist"
+
             End If
-            
         End If
-        
 
-        
         ' 4) DEFAULT
-        
         If decision = DECISION_NONE Then
-            
             decision = DECISION_ALLOW_AUTO
-            
-            reason = "ALLOW_AUTO: NOT_FOUND"
-            
+            reason   = "ALLOW_AUTO: NOT_FOUND"
         End If
-        
     End If
-    
 
-    
-    ' LOG E HEADERS
-    
-    oMessage.HeaderValue("X-AureaBlack-Decision") = reason
-    
+    ' Log da decisao (audit)
+    WriteAuditLog Now & " | FROM=" & fromAddr & " | To=" & firstRecipientAddr & _
+        " | IP=" & remoteIP & " | AUTH=" & CStr(oClient.Username <> "") & _
+        " | DECISION=" & CStr(decision) & " | " & reason
 
-    
-    Dim isAuthenticated
-    
-    isAuthenticated = (oClient.Username <> "")
-    
+    ' Aplicar decisao – AQUI usamos Result.Value / Result.Message
+    If decision = DECISION_BLOCK_BLACK Then
 
-    
-    Dim logLine
-    
-    logLine = Now & " | FROM=" & fromAddr & " | To=" & firstRecipientAddr & " | IP=" & remoteIP & " | AUTH=" & CStr(isAuthenticated) & " | DECISION=" & CStr(decision) & " | " & reason
-    
-    WriteAuditLog logLine
-    
+        oMessage.Body    = "BLOCKED BY AUREA/BLACK ANTI-SPAM SYSTEM" & vbCrLf & _
+                           "Reason: " & reason & vbCrLf & vbCrLf & oMessage.Body
+        oMessage.Subject = "[SPAM BLOCKED] " & oMessage.Subject
 
-    
-    ' ACAO FINAL
-    
-    Select Case decision
-            
-        Case DECISION_BLOCK_BLACK
-            
-            Result.Value = 2
-            
-            Result.Message = "550 " & reason
-            
-            WriteAuditLog "SMTP_REJECT: " & fromAddr & " -> " & reason
-            
-        Case Else
-            
-            Result.Value = 0
-            
-    End Select
-    
+        WriteAuditLog "SMTP_REJECT: " & fromAddr & " -> " & reason
 
-    
-    If Err.Number <> 0 Then
-        
-        WriteAuditLog "SCRIPT_ERROR: " & Err.Number & " - " & Err.Description
-        
-        Err.Clear
-        
+        Result.Value   = 2
+        Result.Message = "550 " & reason
+
+    Else
+
+        Result.Value = 0
+
     End If
-    
 End Sub
 
-
-
+' ========================================================
+' FUNCOES AUXILIARES
 ' ========================================================
 
-' CACHE COM OBJETO GLOBAL (v3.3 - CORRETO E PERSISTENTE)
+Function GetDomain(email)
+    Dim pos
+    pos = InStr(email, "@")
+    If pos > 0 Then
+        GetDomain = Mid(email, pos + 1)
+    Else
+        GetDomain = ""
+    End If
+End Function
 
-' ========================================================
+Function IsLocalAddress(addr)
+    IsLocalAddress = (InStr(LCase(addr), "@" & LOCAL_DOMAIN) > 0)
+End Function
 
 Sub CheckAndLoadCache()
-    
-    On Error Resume Next
-    
-    Dim lastLoad, timeDiff
-    
+    Dim needReload
+    needReload = False
 
-    
-    ' Usar o objeto Global.Value para persistir a data
-    
-    lastLoad = Global.Value("AureaBlack_LastLoad")
-    
-
-    
-    If IsEmpty(lastLoad) Or (TypeName(lastLoad) = "Null") Then
-        
-        lastLoad = CDate("1/1/1900") ' Forca recarga inicial
-        
+    If IsEmpty(g_LastCacheLoad) Then
+        needReload = True
+    Else
+        Dim diffMinutes
+        diffMinutes = DateDiff("n", g_LastCacheLoad, Now)
+        If diffMinutes >= CACHE_RELOAD_MINUTES Then
+            needReload = True
+        End If
     End If
-    
 
-    
-    timeDiff = DateDiff("n", lastLoad, Now()) ' Diferenca em minutos
-    
-
-    
-    ' Recarrega se expirou OU se relogio foi ajustado para tras
-    
-    If timeDiff >= CACHE_RELOAD_MINUTES Or timeDiff < 0 Then
-        
+    If needReload Then
         WriteAuditLog "CACHE_RELOAD: Loading lists..."
-        
 
-        
-        ' Salva As listas no objeto Global
-        
-        Global.Value("g_WLEmails") = LoadListToArray("whitelist_emails.txt")
-        
-        Global.Value("g_WLDomains") = LoadListToArray("whitelist_domains.txt")
-        
-        Global.Value("g_WLIPs") = LoadListToArray("whitelist_ips.txt")
-        
+        g_WLEmails  = LoadListFile("whitelist_emails.txt")
+        g_WLDomains = LoadListFile("whitelist_domains.txt")
+        g_WLIPs     = LoadListFile("whitelist_ips.txt")
 
-        
-        Global.Value("g_BLEmails") = LoadListToArray("blacklist_emails.txt")
-        
-        Global.Value("g_BLDomains") = LoadListToArray("blacklist_domains.txt")
-        
-        Global.Value("g_BLIPs") = LoadListToArray("blacklist_ips.txt")
-        
+        g_BLEmails  = LoadListFile("blacklist_emails.txt")
+        g_BLDomains = LoadListFile("blacklist_domains.txt")
+        g_BLIPs     = LoadListFile("blacklist_ips.txt")
 
-        
-        Global.Value("AureaBlack_LastLoad") = Now()
-        
+        g_LastCacheLoad = Now
+
         WriteAuditLog "CACHE_RELOAD: Done."
-        
     End If
-    
 End Sub
 
-
-
-' ========================================================
-
-' CARREGAR LISTA (v3.2 - ROBUSTO, LINHA POR LINHA)
-
-' ========================================================
-
-Function LoadListToArray(ByVal fileName)
-    
-    Dim fso, f, fullPath, line, cleanLines()
-    
-    Dim j
-    
-    ReDim cleanLines(0)
-    
-    j = - 1
-    
-
-    
+Function LoadListFile(filename)
     On Error Resume Next
-    
-    fullPath = LIST_BASE_PATH & "\" & fileName
-    
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    
 
-    
+    Dim fso, f, line, arr()
+    Dim count, fullPath
+
+    count    = 0
+    fullPath = LIST_BASE_PATH & "\" & filename
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+
     If Not fso.FileExists(fullPath) Then
-        
-        WriteAuditLog "CACHE_LOAD_WARN: " & fileName & " Not found."
-        
-        LoadListToArray = Array()
-        
+        LoadListFile = Array()
         Exit Function
-        
     End If
-    
 
-    
-    Set f = fso.OpenTextFile(fullPath, 1, False) ' 1 = Read
-    
-    If Err.Number <> 0 Then
-        
-        WriteAuditLog "CACHE_LOAD_ERROR: " & fullPath & " - " & Err.Description
-        
-        Err.Clear
-        
-        LoadListToArray = Array()
-        
-        Exit Function
-        
-    End If
-    
-    On Error GoTo 0 ' Desativa o "ignore erro"
-    
+    Set f = fso.OpenTextFile(fullPath, 1)
 
-    
     Do While Not f.AtEndOfStream
-        
-        line = LCase(Trim(f.ReadLine)) ' f.ReadLine lida com qualquer quebra de linha
-        
+        line = Trim(f.ReadLine)
 
-        
-        ' Limpa comentarios e linhas em branco
-        
-        If line <> "" And Left(line, 1) <> "#" And Left(line, 1) <> ";" Then
-            
-            j = j + 1
-            
-            ReDim Preserve cleanLines(j)
-            
-            cleanLines(j) = line
-            
+        ' Ignora linhas vazias e comentarios
+        If Len(line) > 0 And Left(line, 1) <> "#" Then
+            ReDim Preserve arr(count)
+            arr(count) = LCase(line)
+            count      = count + 1
         End If
-        
     Loop
-    
+
     f.Close
-    
 
-    
-    If j = - 1 Then
-        
-        LoadListToArray = Array() ' Retorna array vazio se o arquivo so tiver comentarios
-        
+    If count > 0 Then
+        LoadListFile = arr
     Else
-        
-        LoadListToArray = cleanLines
-        
+        LoadListFile = Array()
     End If
-    
 End Function
 
-
-
 ' ========================================================
-
-' VERIFICACAO SEGURA COM DEBUG (v3.7 - TRACEABLE MATCHES)
-
+' VERIFICACAO COM SUPORTE A WILDCARDS
 ' ========================================================
-
 Function IsInList(ByVal listCacheName, ByVal key)
-    
-    Dim i, ub, regex, item, pattern, listArray
-    
+    On Error Resume Next
+
     IsInList = False
-    
-    key = LCase(Trim(key))
-    
 
-    
-    ' Rejeita chave vazia
-    
-    If key = "" Then Exit Function
-    
+    Dim arr, i, item
+    arr = Eval(listCacheName)
 
-    
-    ' Pega o array Do cache Global.Value
-    
-    listArray = Global.Value(listCacheName)
-    
-    If Not IsArray(listArray) Then Exit Function
-    
-
-    
-    On Error Resume Next
-    
-    ub = UBound(listArray)
-    
-    If ub < 0 Then Exit Function
-    
-
-    
-    Set regex = CreateObject("VBScript.RegExp")
-    
-    regex.IgnoreCase = True
-    
-    regex.Global = False
-    
-
-    
-    For i = 0 To ub
-        
-        item = Trim(listArray(i))
-        
-
-        
-        ' Ignora entradas vazias
-        
-        If item = "" Then
-            
-            ' Continua para proxima iteracao
-            
-        ElseIf InStr(item, "*") > 0 Or InStr(item, "?") > 0 Then
-            
-            ' Wildcard match
-            
-            pattern = item
-            
-            pattern = Replace(pattern, "\", "\\") ' Escapa barra invertida
-            
-            pattern = Replace(pattern, ".", "\.") ' Escapa ponto
-            
-            pattern = Replace(pattern, "^", "\^") ' Escapa circunflexo
-            
-            pattern = Replace(pattern, "$", "\$") ' Escapa cifrão
-            
-            pattern = Replace(pattern, "+", "\+") ' Escapa mais
-            
-            pattern = Replace(pattern, "(", "\(") ' Escapa parênteses
-            
-            pattern = Replace(pattern, ")", "\)")
-            
-            pattern = Replace(pattern, "[", "\[") ' Escapa colchetes
-            
-            pattern = Replace(pattern, "]", "\]")
-            
-            pattern = Replace(pattern, "{", "\{") ' Escapa chaves
-            
-            pattern = Replace(pattern, "}", "\}")
-            
-            pattern = Replace(pattern, "|", "\|") ' Escapa pipe
-            
-
-            
-            ' AGORA converte wildcards (* e ?) para regex
-            
-            pattern = Replace(pattern, "*", ".*") ' * vira .*
-            
-            pattern = Replace(pattern, "?", ".") ' ? vira .
-            
-
-            
-            regex.Pattern = "^" & pattern & "$"
-            
-
-            
-            If regex.Test(key) Then
-                
-                IsInList = True
-                
-                WriteAuditLog "DEBUG_MATCH: " & listCacheName & " item=[" & item & "] key=[" & key & "] (regex)"
-                
-                Exit Function
-                
-            End If
-            
-        Else
-            
-            ' Match exato (sem wildcard)
-            
-            If key = item Then
-                
-                IsInList = True
-                
-                WriteAuditLog "DEBUG_MATCH: " & listCacheName & " item=[" & item & "] key=[" & key & "] (exact)"
-                
-                Exit Function
-                
-            End If
-            
-        End If
-        
-    Next
-    
-End Function
-
-
-
-' ========================================================
-
-' FUNCOES DE APOIO
-
-' ========================================================
-
-Function GetDomain(ByVal addr)
-    
-    Dim atPos
-    
-    atPos = InStr(1, addr, "@")
-    
-    If atPos > 0 Then GetDomain = Mid(addr, atPos + 1) Else GetDomain = ""
-    
-End Function
-
-
-
-Function IsLocalAddress(ByVal addr)
-    
-    ' Nao precisa de LCase pois LOCAL_DOMAIN e constante
-    
-    If Right(LCase(addr), Len(LOCAL_DOMAIN) + 1) = "@" & LOCAL_DOMAIN Then IsLocalAddress = True Else IsLocalAddress = False
-    
-End Function
-
-
-
-Sub WriteAuditLog(ByVal text)
-    
-    Dim fso, f
-    
-    On Error Resume Next
-    
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    
-    Set f = fso.OpenTextFile(LOG_FILE, 8, True) ' 8 = Append, True = Create
-    
-    If Err.Number = 0 Then
-        
-        f.WriteLine text
-        
-        f.Close
-        
-    Else
-        
-        Err.Clear
-        
+    If Not IsArray(arr) Then
+        Exit Function
     End If
-    
+
+    key = LCase(Trim(key))
+
+    For i = 0 To UBound(arr)
+        item = LCase(Trim(arr(i)))
+
+        ' Suporte a wildcards (* e ?)
+        If InStr(item, "*") > 0 Or InStr(item, "?") > 0 Then
+
+            If MatchWildcard(item, key) Then
+                IsInList = True
+                Exit Function
+            End If
+
+        Else
+            ' Match exato
+            If item = key Then
+                IsInList = True
+                Exit Function
+            End If
+        End If
+    Next
+End Function
+
+' ========================================================
+' FUNCAO DE MATCH COM WILDCARD
+' ========================================================
+Function MatchWildcard(pattern, text)
+    On Error Resume Next
+
+    Dim regex
+    Set regex = New RegExp
+
+    ' Converte wildcard para regex
+    ' * vira .*
+    ' ? vira .
+    Dim regexPattern
+    regexPattern = Replace(pattern, ".", "\.")
+    regexPattern = Replace(regexPattern, "*", ".*")
+    regexPattern = Replace(regexPattern, "?", ".")
+    regexPattern = "^" & regexPattern & "$"
+
+    regex.Pattern    = regexPattern
+    regex.IgnoreCase = True
+    regex.Global     = False
+
+    MatchWildcard = regex.Test(text)
+End Function
+
+' ========================================================
+' FUNCAO DE LOG
+' ========================================================
+Sub WriteAuditLog(msg)
+    On Error Resume Next
+
+    Dim fso, f
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set f   = fso.OpenTextFile(LOG_FILE, 8, True)
+    f.WriteLine msg
+    f.Close
 End Sub
