@@ -59,20 +59,37 @@ Foram criados scripts em PowerShell e VBScript para resolver problemas que ferra
 
 ### 1. 🛡️ Estudo de Caso: Segurança Anti-Spam e "Fail2Ban"
 
-O hMailServer é poderoso, mas vulnerável a spam moderno e ataques de força bruta.  
+O hMailServer é poderoso, mas vulnerável a spam moderno e ataques de força bruta.
 A solução implementada tem duas camadas:
 
-* **Camada 1 (VBScript):**  
+* **Camada 1 (VBScript):**
   Filtro de eventos (`EventHandlers.vbs`) que intercepta e-mails no `OnSMTPData` e os valida contra:
   - whitelist/blacklist de IPs, domínios e e-mails;
   - regras de decisão (ALLOW / BLOCK) com logs de auditoria.
 
-* **Camada 2 (PowerShell):**  
+* **Camada 2 (PowerShell):**
   Script "Fail2Ban" (`AUTO-BLOQUEIO-Fail2Ban.ps1`) que:
   - lê os logs do hMailServer;
   - conta falhas de autenticação (códigos 530/535) por IP;
   - identifica padrões de força bruta;
   - alimenta automaticamente a `blacklist_ips` utilizada pelo `EventHandlers.vbs`.
+
+#### 🐛 Debugging Sistemático do EventHandlers (v3.4 → v3.8.1)
+
+Este projeto documenta um **caso real de debugging** de bugs críticos no sistema anti-spam:
+
+* **Bug de Wildcard Regex:** Padrões `*.xyz` não funcionavam devido à ordem incorreta de escaping
+* **Bug de GoTo VBScript:** Limitações da linguagem VBScript com labels
+* **8 versões evolutivas** documentadas com correções incrementais
+* **Sistema DEBUG completo** com logs visuais detalhados de cada decisão
+
+**Documentação Completa:**
+- [`PROJETO_OVERVIEW.md`](./PROJETO_OVERVIEW.md) - Visão geral do projeto de debugging
+- [`STATUS_ATUAL.md`](./STATUS_ATUAL.md) - Status atual e próximos passos
+- [`COMPARACAO_v3.8_BUGADO_vs_CORRIGIDO.md`](./COMPARACAO_v3.8_BUGADO_vs_CORRIGIDO.md) - Análise técnica do bug de wildcard
+- [`TROUBLESHOOTING_PORTA_25.md`](./TROUBLESHOOTING_PORTA_25.md) - Guia de diagnóstico de infraestrutura
+
+**Demonstra:** Debugging sistemático, análise de logs, VBScript avançado, regex, documentação técnica detalhada.
 
 ➡️ **[Documentação técnica desta solução](./docs/01-Seguranca-Anti-Spam.md)**
 
