@@ -40,7 +40,7 @@ Substituímos a stack padrão de criptografia do Windows/hMailServer por uma con
 **Resultado Comprovado:**
 > *O servidor atingiu a pontuação **114 de 114 (100%)** no teste internacional CheckTLS, garantindo "Verde" em todos os quesitos de segurança, certificado e criptografia.*
 
-*(Inserir aqui o print do CheckTLS 100% se desejar)*
+*(Verifique como você recebe e-mails (Teste do destinatário))*https://www.checktls.com/
 
 ### 2. Defesa Ativa Anti-Spam ("Fail2Ban" para Windows)
 Como o hMailServer não possui proteção nativa contra força bruta moderna, desenvolvi duas camadas de defesa:
