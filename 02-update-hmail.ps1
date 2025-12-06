@@ -1,9 +1,9 @@
 param(
     [string]$KeyDir,                             # se vier do wrapper, usa
-    [string]$CertRootDir = 'C:\Certificados',    # senão, procura key-YYYYMMDD-HHMM aqui
+    [string]$CertRootDir = 'C:\scripts\secrets\segurança.pass',    # senão, procura key-YYYYMMDD-HHMM aqui
     [string]$HmailAdminUser = 'Administrator',
     [string]$HmailAdminPass = '',                # opcional (evite usar)
-    [string]$HmailAdminPassFile = 'C:\Certificados\hmail.pass',  # <-- arquivo DPAPI
+    [string]$HmailAdminPassFile = 'C:\scripts\secrets\segurança.pass\hmail.pass',  # <-- arquivo DPAPI
     [string]$HmailCertName = 'letsencrypt-2025'
 )
 function Fail($m) { Write-Error $m; exit 1 }
