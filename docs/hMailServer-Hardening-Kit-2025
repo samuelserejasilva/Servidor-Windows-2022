@@ -1,0 +1,21 @@
+## 🏆 Resultados Alcançados
+
+A configuração aplicada mitigou vulnerabilidades históricas do hMailServer (como algoritmos fracos e falta de suporte nativo a TLS moderno), atingindo a pontuação máxima em testes de segurança.
+
+| Teste | Resultado | Status |
+| :--- | :--- | :--- |
+| **CheckTLS** | **114/114** (Score 100%) | ✅ Aprovado |
+| **Criptografia** | TLS 1.2 e **TLS 1.3** Ativos | ✅ Moderno |
+| **Protocolos Obsoletos** | SSLv3, TLS 1.0, TLS 1.1 | 🚫 Bloqueados |
+| **Algoritmos Fracos** | RC4, MD5, DES, 3DES | 🚫 Banidos |
+
+---
+
+## ⚙️ Configuração SSL/TLS (Cipher Suite)
+
+Para atingir este nível de segurança, foi necessário substituir a lista padrão de *Ciphers* do hMailServer por uma string restritiva que prioriza curvas elípticas (ECDHE) e AES-GCM, bloqueando vetores de ataque conhecidos.
+
+**String de Ciphers utilizada:**
+
+```text
+TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:!RC4:!aNULL:!eNULL:!EXPORT:!DES:!3DES:!MD5:!PSK:!DSS
