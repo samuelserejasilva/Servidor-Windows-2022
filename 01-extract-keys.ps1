@@ -1,5 +1,5 @@
 param(
-    [string]$Base = 'C:\Certificados',
+    [string]$Base = 'C:\scripts\secrets\',
     [string]$PfxPath,
     [string]$PfxPassword
 )
