@@ -1,103 +1,88 @@
-# Servidor Windows Server 2022 — Ambiente de Produção (Hardened)
+# Servidor Windows Server 2022 — Infraestrutura de Produção (Hardened)
 
-> **Status de Segurança (Dez/2025):** \
-> 🟢 **CheckTLS Score:** 114/114 (100%) \
-> 🔒 **Criptografia:** TLS 1.3 & 1.2 (Strict) \
+> **Status de Segurança (Dez/2025):**
+> 🟢 **CheckTLS Score:** [114/114 (100%)](https://www.checktls.com/)
+> 🔒 **Criptografia:** TLS 1.3 & 1.2 (Strict Mode)
 > 🛡️ **Anti-Spam:** Fail2Ban Customizado + Filtro de Borda
 
-Servidor Windows Server 2022 para hospedagem de apps Java (Spring Boot/Tomcat), sites PHP em IIS e serviço de e-mail corporativo com hMailServer/Roundcube, integrado a Mikrotik e SSL Let's Encrypt.
+Este repositório documenta a infraestrutura **real em produção** do domínio **portalauditoria.com.br**. O projeto demonstra a administração avançada de um ambiente Windows Server 2022, integrando serviços legados (hMailServer) com stacks modernas (Spring Boot, SSL Automatizado), focando em segurança e automação.
 
 ---
 
 ## 🎯 Objetivo
 
-Este repositório documenta uma infraestrutura **real em produção** para o domínio **portalauditoria.com.br**. Ele serve como:
-
-* **Portfólio Técnico:** Demonstração prática de administração de sistemas, automação (DevOps) e segurança ofensiva/defensiva.
-* **Base de Referência:** Documentação para provisionar ambientes Windows seguros (Hardening).
-* **Diário de Bordo:** Scripts PowerShell e VBScript para resolver limitações nativas do ambiente Windows.
-
-### 🔎 Resumo Técnico
-* **OS:** Windows Server 2022.
-* **E-mail:** hMailServer (Hardened) + Roundcube + Autodiscover.
-* **Web:** IIS (Reverse Proxy) + Tomcat 11 (Java/Spring) + PHP 8.x.
-* **Rede:** Mikrotik (Firewall/NAT) + Integração Cloudflare/Registro.br.
-* **Automação:** PowerShell (Fail2Ban, SSL Renew) e VBScript (Event Handlers).
+* **Portfólio de Engenharia:** Demonstração prática de automação (Scripting), segurança defensiva e administração de sistemas.
+* **Base de Conhecimento:** Documentação de referência para *Hardening* de servidores Windows expostos à internet.
+* **DevOps on Windows:** Uso de PowerShell e VBScript para orquestrar serviços, certificados e logs.
 
 ---
 
-## 🛡️ Destaque 2025: hMailServer Hardening Kit
+## 🛡️ Destaque: hMailServer Hardening Kit
 
-Um dos maiores desafios deste projeto foi modernizar o **hMailServer** (software legado) para atender aos requisitos de segurança de 2025 exigidos por Gmail, Outlook e Yahoo.
+Um dos maiores desafios deste projeto foi modernizar o stack de e-mail para atender aos requisitos de segurança de 2025 (Gmail/Outlook), mantendo o software *Self-Hosted*.
 
-Implementamos um **Hardening Kit** que elevou a segurança de transporte ao nível máximo.
+### 1. Criptografia Blindada (TLS 1.3)
+Atuamos no registro do Windows (SChannel) e nas configurações do OpenSSL para garantir nota máxima em segurança:
+* **Protocolos:** TLS 1.0 e 1.1 **Desativados** via Registro. Apenas TLS 1.2 e 1.3 permitidos.
+* **Cipher Suites:** Implementação de algoritmos restritivos (Elliptic Curves e AES-GCM), banindo RC4, MD5 e 3DES.
+* **Resultado:** Score **100% no CheckTLS**, garantindo entrega de e-mails sem rejeição por segurança.
 
-### 1. Criptografia de Elite (TLS 1.3)
-Substituímos a stack padrão de criptografia do Windows/hMailServer por uma configuração restritiva.
-* **Protocolos:** TLS 1.0 e 1.1 **Desativados**. Apenas TLS 1.2 e 1.3 permitidos.
-* **Ciphers:** Forçamos o uso de algoritmos modernos (Elliptic Curves e AES-GCM), banindo RC4, MD5 e 3DES.
-
-**Resultado Comprovado:**
-> *O servidor atingiu a pontuação **114 de 114 (100%)** no teste internacional CheckTLS, garantindo "Verde" em todos os quesitos de segurança, certificado e criptografia.*
-
-*(Verifique como você recebe e-mails (Teste do destinatário))*https://www.checktls.com/
-
-### 2. Defesa Ativa Anti-Spam ("Fail2Ban" para Windows)
-Como o hMailServer não possui proteção nativa contra força bruta moderna, desenvolvi duas camadas de defesa:
-
-* **Camada 1 (VBScript - `EventHandlers.vbs`):**
-    * Intercepta a conexão SMTP (`OnSMTPData`).
-    * Consulta listas de bloqueio em tempo real (`blacklist_domains.txt` com suporte a wildcard `*.dominio.com` e `blacklist_ips.txt`).
-    * Rejeita conexões vindas de TLDs ou provedores de spam conhecidos antes mesmo de processar a mensagem.
-
-* **Camada 2 (PowerShell - `AUTO-BLOQUEIO-Fail2Ban.ps1`):**
-    * Lê os logs do hMailServer a cada X minutos.
-    * Identifica IPs com múltiplas falhas de autenticação (Erro 535).
-    * Adiciona automaticamente o IP ofensivo à blacklist do Firewall ou do script VBS.
-
-➡️ **[Ver Documentação Detalhada de Segurança](/docs/01-Seguranca-Anti-Spam.md)**
+### 2. Defesa Ativa ("Fail2Ban" para Windows)
+Desenvolvi uma solução própria de mitigação de ataques de força bruta e spam:
+* **Camada 1 (VBScript):** O script `EventHandlers.vbs` intercepta conexões SMTP em tempo real, bloqueando TLDs e padrões de domínios maliciosos (ex: `*.promovoo.xyz`) antes do processamento.
+* **Camada 2 (PowerShell):** O script `AUTO-BLOQUEIO-Fail2Ban.ps1` analisa logs de auditoria, identifica IPs com falhas recorrentes de autenticação (Erro 535) e os bane automaticamente.
 
 ---
 
-## 🤖 Automação de Certificados SSL (Full Pipeline)
+## 🏗️ Arquitetura do Ambiente
 
-O Win-ACME (Let’s Encrypt) renova o certificado do IIS, mas não atualiza nativamente o serviço de e-mail. Para resolver isso, criei uma esteira automatizada em PowerShell:
+O servidor atua como um *Host* convergente para múltiplas aplicações, otimizado para performance e segurança:
 
-1.  **Trigger:** O Win-ACME renova o certificado.
-2.  **Extração (`01-extract-keys.ps1`):** O script localiza o novo `.pfx`, extrai a Chave Privada e o Certificado Público.
-3.  **Aplicação (`02-update-hmail.ps1`):** Interage com a API COM do hMailServer para substituir o certificado nas portas SMTP (587) e IMAP (993).
-4.  **Auditoria (`Comparar-Certificados.ps1`):** Verifica se o Thumbprint do certificado do IIS bate com o do hMailServer, garantindo sincronia.
+* **Sistema Operacional:** Windows Server 2022.
+* **Web Proxy (IIS + ARR):**
+    * Atua como Reverse Proxy para aplicações Java (Tomcat 11/Spring Boot).
+    * Gerencia o SSL Offloading e cabeçalhos de segurança (`HSTS`, `X-Forwarded-Proto`).
+* **E-mail Corporativo:**
+    * **hMailServer:** SMTP/IMAP/POP3 com armazenamento em banco de dados.
+    * **Roundcube:** Webmail rodando sobre IIS via PHP 8.x (FastCGI).
+    * **Autodiscover:** Configuração XML automática para Outlook e Thunderbird.
+* **Rede & Borda:**
+    * Integração com **Mikrotik** para NAT/Firewall de borda.
+    * DNS gerenciado (Cloudflare/Registro.br).
 
-➡️ **[Ver Documentação de Automação SSL](/docs/02-Automacao-SSL.md)**
+---
+
+## 🤖 Automação SSL (Full Pipeline)
+
+Para resolver a falta de integração nativa entre o Let's Encrypt e o hMailServer, foi criada uma esteira de renovação automática em PowerShell:
+
+1.  **Trigger:** O cliente ACME renova o certificado do domínio.
+2.  **Extração Segura (`01-extract-keys.ps1`):** Extrai a chave privada e o certificado público do container PFX.
+3.  **Deploy (`02-update-hmail.ps1`):**
+    * Utiliza a API COM do hMailServer para injetar o novo certificado.
+    * Utiliza **DPAPI** para leitura segura de credenciais (sem senhas expostas no código).
+    * Reinicia os serviços afetados sem downtime perceptível.
+4.  **Auditoria (`Comparar-Certificados.ps1`):** Valida se o *Thumbprint* do IIS corresponde ao do serviço de e-mail.
 
 ---
 
 ## 📂 Estrutura do Repositório
 
-* `docs/` — Documentação técnica detalhada.
-* `scripts/hmail/` — Scripts de automação (Fail2Ban, Logs, Manutenção).
-* `scripts/ssl/` — Pipeline de renovação de certificados.
-* `EventHandlers.vbs` — O "cérebro" da segurança do hMailServer.
-* `autodiscover.xml` & `config-v1.1.xml` — Arquivos para configuração automática de Outlook e Thunderbird.
+| Diretório/Arquivo | Descrição |
+| :--- | :--- |
+| `docs/` | Documentação técnica detalhada e procedimentos. |
+| `scripts/hmail/` | Scripts de automação (Logs, Fail2Ban, Manutenção). |
+| `scripts/ssl/` | Pipeline de renovação e extração de certificados. |
+| `EventHandlers.vbs` | Script de hook para filtragem de conexões SMTP. |
+| `autodiscover.xml` | Configuração automática para clientes Microsoft Outlook. |
+| `config-v1.1.xml` | Configuração automática para clientes Mozilla Thunderbird. |
 
----
-
-## 🌐 Serviços Publicados
-
-### Aplicação Web (Java / Tomcat)
-* Reverse Proxy via **IIS + ARR**.
-* Tráfego HTTP redirecionado para HTTPS.
-* Cabeçalhos de segurança (`X-Forwarded-Proto`, `HSTS`) configurados.
-
-### Webmail (Roundcube)
-* Rodando sobre IIS + PHP FastCGI.
-* URL: `https://www.portalauditoria.com.br/webmail/`
-* Hardening no `web.config` bloqueando acesso a diretórios sensíveis do Roundcube.
+> **Nota de Segurança:** Todos os arquivos de configuração neste repositório foram anonimizados. Credenciais, chaves privadas e IPs de gerenciamento foram removidos ou substituídos por variáveis de ambiente/arquivos seguros.
 
 ---
 
 ## 👤 Autor
 
 **Samuel S.**
-*Administrador de Sistemas Sênior & Desenvolvedor*
-Especialista em infraestrutura Windows, Redes e integração de sistemas legados com segurança moderna.
+*SysAdmin Sênior & Especialista em Automação*
+Focado em extrair máxima segurança e performance de infraestruturas Windows e integração de sistemas híbridos.
