@@ -15,7 +15,7 @@ A configuração implementa **NAT Hairpin**, **Port Forwarding** restrito e **Fi
 **Destaques da Configuração Mikrotik:**
 
 * **Hairpin NAT:** Permite que clientes internos acessem os serviços (Webmail/ERP) usando o DNS público sem falhas de roteamento.
-* **Port Forwarding Cirúrgico:**
+* **Port Forwarding:**
     * `TCP 25, 587, 465` -> hMailServer (SMTP)
     * `TCP 80, 443` -> IIS Reverse Proxy
     * `TCP 3389` -> Bloqueado (Acesso restrito apenas via VPN ou IP Whitelist)
