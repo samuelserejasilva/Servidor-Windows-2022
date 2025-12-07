@@ -7,6 +7,22 @@
 
 Este repositório documenta a infraestrutura **real em produção** do domínio **portalauditoria.com.br**. O projeto demonstra a administração avançada de um ambiente Windows Server 2022, integrando serviços legados (hMailServer) com stacks modernas (Spring Boot, SSL Automatizado), focando em segurança e automação.
 
+### 🌐 Borda de Rede (Network Edge)
+
+A segurança do servidor Windows começa no roteador de borda (**Mikrotik RB750**). 
+A configuração implementa **NAT Hairpin**, **Port Forwarding** restrito e **Firewall Stateful**.
+
+**Destaques da Configuração Mikrotik:**
+
+* **Hairpin NAT:** Permite que clientes internos acessem os serviços (Webmail/ERP) usando o DNS público sem falhas de roteamento.
+* **Port Forwarding Cirúrgico:**
+    * `TCP 25, 587, 465` -> hMailServer (SMTP)
+    * `TCP 80, 443` -> IIS Reverse Proxy
+    * `TCP 3389` -> Bloqueado (Acesso restrito apenas via VPN ou IP Whitelist)
+* **Monitoramento:** Scripts de *Netwatch* e *Log* para identificar ataques de força bruta na porta SMTP.
+
+➡️ **[Ver Configuração do Mikrotik (Sanitized)](./docs/Network-Edge.md)**
+
 ---
 
 ## 🎯 Objetivo
