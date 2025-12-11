@@ -5,66 +5,59 @@
 > 🔒 **Criptografia:** TLS 1.3 & 1.2 (Strict Mode)
 > 🛡️ **Anti-Spam:** Fail2Ban Customizado + Filtro de Borda
 
-Este repositório documenta a infraestrutura **real em produção** do domínio **portalauditoria.com.br**. O projeto demonstra a administração avançada de um ambiente Windows Server 2022, integrando serviços legados (hMailServer) com stacks modernas (Spring Boot, SSL Automatizado), focando em segurança e automação.
-
-### 🌐 Borda de Rede (Network Edge)
-
-A segurança do servidor Windows começa no roteador de borda (**Mikrotik RB750**). 
-A configuração implementa **NAT Hairpin**, **Port Forwarding** restrito e **Firewall Stateful**.
-
-**Destaques da Configuração Mikrotik:**
-
-* **Hairpin NAT:** Permite que clientes internos acessem os serviços (Webmail/ERP) usando o DNS público sem falhas de roteamento.
-* **Port Forwarding:**
-    * `TCP 25, 587, 465` -> hMailServer (SMTP)
-    * `TCP 80, 443` -> IIS Reverse Proxy
-    * `TCP 3389` -> Bloqueado (Acesso restrito apenas via VPN ou IP Whitelist)
-* **Monitoramento:** Scripts de *Netwatch* e *Log* para identificar ataques de força bruta na porta SMTP.
-
-➡️ **[Ver Configuração do Mikrotik (Sanitized)](./docs/Network-Edge.md)**
-
----
-
-## 🎯 Objetivo
-
-* **Portfólio de Engenharia:** Demonstração prática de automação (Scripting), segurança defensiva e administração de sistemas.
-* **Base de Conhecimento:** Documentação de referência para *Hardening* de servidores Windows expostos à internet.
-* **DevOps on Windows:** Uso de PowerShell e VBScript para orquestrar serviços, certificados e logs.
-
----
-
-## 🛡️ Destaque: hMailServer Hardening Kit
-
-Um dos maiores desafios deste projeto foi modernizar o stack de e-mail para atender aos requisitos de segurança de 2025 (Gmail/Outlook), mantendo o software *Self-Hosted*.
-
-### 1. Criptografia Blindada (TLS 1.3)
-Atuamos no registro do Windows (SChannel) e nas configurações do OpenSSL para garantir nota máxima em segurança:
-* **Protocolos:** TLS 1.0 e 1.1 **Desativados** via Registro. Apenas TLS 1.2 e 1.3 permitidos.
-* **Cipher Suites:** Implementação de algoritmos restritivos (Elliptic Curves e AES-GCM), banindo RC4, MD5 e 3DES.
-* **Resultado:** Score **100% no CheckTLS**, garantindo entrega de e-mails sem rejeição por segurança.
-
-### 2. Defesa Ativa ("Fail2Ban" para Windows)
-Desenvolvi uma solução própria de mitigação de ataques de força bruta e spam:
-* **Camada 1 (VBScript):** O script `EventHandlers.vbs` intercepta conexões SMTP em tempo real, bloqueando TLDs e padrões de domínios maliciosos (ex: `*.promovoo.xyz`) antes do processamento.
-* **Camada 2 (PowerShell):** O script `AUTO-BLOQUEIO-Fail2Ban.ps1` analisa logs de auditoria, identifica IPs com falhas recorrentes de autenticação (Erro 535) e os bane automaticamente.
+Este repositório documenta a infraestrutura **real em produção** do domínio **portalauditoria.com.br**. O projeto demonstra a administração avançada de um ambiente Windows Server 2022, atuando como controlador de domínio, servidor web e de e-mail, integrando serviços legados com stacks modernas (Spring Boot, SSL Automatizado).
 
 ---
 
 ## 🏗️ Arquitetura do Ambiente
 
-O servidor atua como um *Host* convergente para múltiplas aplicações, otimizado para performance e segurança:
+## ☁️ Alinhamento com Conceitos Cloud-Native
 
-* **Sistema Operacional:** Windows Server 2022.
-* **Web Proxy (IIS + ARR):**
-    * Atua como Reverse Proxy para aplicações Java (Tomcat 11/Spring Boot).
-    * Gerencia o SSL Offloading e cabeçalhos de segurança (`HSTS`, `X-Forwarded-Proto`).
-* **E-mail Corporativo:**
-    * **hMailServer:** SMTP/IMAP/POP3 com armazenamento em banco de dados.
-    * **Roundcube:** Webmail rodando sobre IIS via PHP 8.x (FastCGI).
-    * **Autodiscover:** Configuração XML automática para Outlook e Thunderbird.
-* **Rede & Borda:**
-    * Integração com **Mikrotik** para NAT/Firewall de borda.
-    * DNS gerenciado (Cloudflare/Registro.br).
+Embora hospedada *On-Premise* (Local), esta infraestrutura aplica padrões de arquitetura utilizados em grandes provedores de nuvem (Azure/AWS), demonstrando domínio dos fundamentos que sustentam a nuvem:
+
+| Componente Local (Windows) | Conceito de Nuvem Correspondente | O que isso demonstra? |
+| :--- | :--- | :--- |
+| **IIS + ARR (Reverse Proxy)** | **API Gateway / Ingress Controller** | Segurança de borda, SSL Offloading e roteamento de tráfego de aplicação. |
+| **Spring Boot (Porta 8080)** | **Microserviço / Container** | Desacoplamento entre servidor web e aplicação, pronto para Dockerização. |
+| **PowerShell + Win-ACME** | **DevOps / IaC / Automation** | Automação de infraestrutura e gestão de segredos (Certificados) sem intervenção humana. |
+| **Active Directory** | **IAM (Identity Access Management)** | Gestão centralizada de identidade e controle de acesso (base para Azure AD). |
+
+O servidor atua como um *Host* convergente (All-in-One) otimizado para performance e segurança, preparado para escalabilidade futura.
+
+### 🔄 Fluxo de Aplicação (Reverse Proxy Architecture)
+A infraestrutura utiliza o IIS como gateway de entrada, garantindo que o backend Java permaneça isolado da rede pública:
+
+1.  **Frontend (SPA):** Aplicação Vite/TypeScript servida como arquivos estáticos pelo IIS.
+2.  **Backend (API):** Spring Boot (Tomcat Embutido) rodando na porta interna `8080`.
+3.  **Conexão Segura:** O IIS (via **ARR** + **URL Rewrite**) intercepta chamadas `/api/*` e faz o proxy reverso para `http://localhost:8080`.
+    * *Benefício:* Centralização de Certificados SSL e proteção do servidor de aplicação.
+
+### 🔑 Identity & Infraestrutura
+* **Active Directory (AD DS):** Controlador de domínio para autenticação centralizada na rede interna (`contabilidade.local`).
+* **DNS Interno:** Resolução de nomes integrada ao AD com zonas split-horizon.
+* **Web Server:** IIS com suporte a **FastCGI** para executar PHP 8.x (utilizado pelo Webmail/Sistemas Legados).
+
+### 📧 E-mail Corporativo
+* **hMailServer:** SMTP/IMAP/POP3 com armazenamento em banco de dados relacional.
+* **Webmail:** Roundcube rodando sobre IIS (PHP 8.x).
+* **Autodiscover:** Configuração XML automática para Outlook e Thunderbird.
+
+---
+
+## 🛡️ Segurança e Hardening
+
+### 1. Criptografia Blindada (TLS 1.3)
+Atuação direta no registro do Windows (SChannel) para garantir nota máxima em segurança:
+* **Protocolos:** TLS 1.0 e 1.1 **Desativados**. Apenas TLS 1.2 e 1.3 permitidos.
+* **Cipher Suites:** Algoritmos restritivos (Elliptic Curves e AES-GCM), banindo RC4, MD5 e 3DES.
+
+### 2. Defesa Ativa ("Fail2Ban" para Windows)
+Solução proprietária de mitigação de ataques de força bruta:
+* **VBScript (`EventHandlers.vbs`):** Intercepta conexões SMTP em tempo real, bloqueando TLDs maliciosos.
+* **PowerShell (`AUTO-BLOQUEIO-Fail2Ban.ps1`):** Analisa logs de auditoria e bane IPs com falhas recorrentes de autenticação.
+
+### 3. Borda de Rede (Mikrotik)
+O roteador de borda implementa **Hairpin NAT**, permitindo que a rede interna acesse serviços pelo DNS público sem falhas de roteamento, além de Firewall Stateful na porta 25.
 
 ---
 
@@ -72,13 +65,24 @@ O servidor atua como um *Host* convergente para múltiplas aplicações, otimiza
 
 Para resolver a falta de integração nativa entre o Let's Encrypt e o hMailServer, foi criada uma esteira de renovação automática em PowerShell:
 
-1.  **Trigger:** O cliente ACME renova o certificado do domínio.
-2.  **Extração Segura (`01-extract-keys.ps1`):** Extrai a chave privada e o certificado público do container PFX.
-3.  **Deploy (`02-update-hmail.ps1`):**
+1.  **Trigger:** O cliente ACME (Win-ACME) renova o certificado do domínio.
+2.  **Extração Segura:** Script extrai a chave privada e o certificado público do container PFX.
+3.  **Deploy:**
     * Utiliza a API COM do hMailServer para injetar o novo certificado.
-    * Utiliza **DPAPI** para leitura segura de credenciais (sem senhas expostas no código).
     * Reinicia os serviços afetados sem downtime perceptível.
-4.  **Auditoria (`Comparar-Certificados.ps1`):** Valida se o *Thumbprint* do IIS corresponde ao do serviço de e-mail.
+
+---
+
+## ✅ Checklist de Produção
+
+Roteiro de validação aplicado para garantir a integridade do ambiente:
+
+- [x] **Sistema:** Windows Server 2022 configurado como DC (`serv.contabilidade.local`).
+- [x] **Rede:** Hairpin NAT ativo no Mikrotik (Acesso interno via DNS público).
+- [x] **IIS/Proxy:** Regras de Rewrite redirecionando `/api` para `localhost:8080` com sucesso.
+- [x] **E-mail:** Portas 25 (SMTP), 587 (Submission) e 993 (IMAP) validadas externamente.
+- [x] **SSL:** Renovação automática via Win-ACME testada com sucesso.
+- [x] **Backend:** Spring Boot iniciado e API respondendo via Proxy Reverso.
 
 ---
 
@@ -88,12 +92,11 @@ Para resolver a falta de integração nativa entre o Let's Encrypt e o hMailServ
 | :--- | :--- |
 | `docs/` | Documentação técnica detalhada e procedimentos. |
 | `scripts/hmail/` | Scripts de automação (Logs, Fail2Ban, Manutenção). |
-| `scripts/ssl/` | Pipeline de renovação e extração de certificados. |
+| `raiz` | Pipeline de renovação e extração de certificados. |
 | `EventHandlers.vbs` | Script de hook para filtragem de conexões SMTP. |
 | `autodiscover.xml` | Configuração automática para clientes Microsoft Outlook. |
-| `config-v1.1.xml` | Configuração automática para clientes Mozilla Thunderbird. |
 
-> **Nota de Segurança:** Todos os arquivos de configuração neste repositório foram anonimizados. Credenciais, chaves privadas e IPs de gerenciamento foram removidos ou substituídos por variáveis de ambiente/arquivos seguros.
+> **Nota de Segurança:** Todos os arquivos de configuração neste repositório foram anonimizados. Credenciais, chaves privadas e IPs reais foram removidos.
 
 ---
 
@@ -101,4 +104,4 @@ Para resolver a falta de integração nativa entre o Let's Encrypt e o hMailServ
 
 **Samuel S.**
 *SysAdmin Sênior & Especialista em Automação*
-Focado em extrair máxima segurança e performance de infraestruturas Windows e integração de sistemas híbridos.
+Focado em extrair máxima segurança e performance de infraestruturas Windows e integração de sistemas híbridos.formance de infraestruturas Windows e integração de sistemas híbridos.
