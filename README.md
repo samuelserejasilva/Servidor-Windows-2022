@@ -1,5 +1,58 @@
 # Servidor Windows Server 2022 — Infraestrutura de Produção (Hardened)
 
+> **Infraestrutura "Cloud-Native on-premise": IIS Reverse Proxy, SSL Automatizado e Hardening de Segurança.**
+
+[![Windows Server](https://img.shields.io/badge/OS-Windows%20Server%202022-blue?logo=windows)](https://www.microsoft.com/en-us/windows-server)
+[![SSL](https://img.shields.io/badge/SSL-A%2B%20Score-success)](https://www.ssllabs.com/)
+[![CheckTLS](https://img.shields.io/badge/CheckTLS-100%25-success)](https://www.checktls.com/)
+
+---
+
+## 🏗️ Arquitetura de Borda e Aplicação
+
+Este repositório documenta a infraestrutura real do **Portal Auditoria**. O ambiente aplica conceitos de nuvem (Gateway, Containerização Lógica, IaC) em um servidor Windows bare-metal.
+
+### Fluxo de Requisição (Request Flow)
+
+```mermaid
+graph LR
+    User((Usuário)) -->|HTTPS/443| Mikrotik[Firewall de Borda]
+    Mikrotik -->|Port Forward| IIS[IIS + ARR (Reverse Proxy)]
+    
+    subgraph Windows Server 2022
+        IIS -->|Static Files| Frontend[SPA Files (Vite)]
+        IIS -->|/api/* (Proxy)| Tomcat[Spring Boot @ :8080]
+        
+        CertBot[Win-ACME] -->|Renovação Auto| IIS
+        Fail2Ban[Scripts PowerShell] -->|Block IP| Firewall[Windows Firewall]
+    end
+> **Infraestrutura "Cloud-Native on-premise": IIS Reverse Proxy, SSL Automatizado e Hardening de Segurança.**
+
+[![Windows Server](https://img.shields.io/badge/OS-Windows%20Server%202022-blue?logo=windows)](https://www.microsoft.com/en-us/windows-server)
+[![SSL](https://img.shields.io/badge/SSL-A%2B%20Score-success)](https://www.ssllabs.com/)
+[![CheckTLS](https://img.shields.io/badge/CheckTLS-100%25-success)](https://www.checktls.com/)
+
+---
+
+## 🏗️ Arquitetura de Borda e Aplicação
+
+Este repositório documenta a infraestrutura real do **Portal Auditoria**. O ambiente aplica conceitos de nuvem (Gateway, Containerização Lógica, IaC) em um servidor Windows bare-metal.
+
+### Fluxo de Requisição (Request Flow)
+
+```mermaid
+graph LR
+    User((Usuário)) -->|HTTPS/443| Mikrotik[Firewall de Borda]
+    Mikrotik -->|Port Forward| IIS[IIS + ARR (Reverse Proxy)]
+    
+    subgraph Windows Server 2022
+        IIS -->|Static Files| Frontend[SPA Files (Vite)]
+        IIS -->|/api/* (Proxy)| Tomcat[Spring Boot @ :8080]
+        
+        CertBot[Win-ACME] -->|Renovação Auto| IIS
+        Fail2Ban[Scripts PowerShell] -->|Block IP| Firewall[Windows Firewall]
+    end
+
 > **Status de Segurança (Dez/2025):**
 > 🟢 **CheckTLS Score:** [114/114 (100%)](https://www.checktls.com/)
 > 🔒 **Criptografia:** TLS 1.3 & 1.2 (Strict Mode)
